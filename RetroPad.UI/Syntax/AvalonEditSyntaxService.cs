@@ -91,39 +91,52 @@ public class AvalonEditSyntaxService
 
     private const string JsonXshd = @"<?xml version=""1.0""?>
 <SyntaxDefinition name=""JSON"" extensions="".json"">
+  <Color name=""Key"" foreground=""#9CDCFE"" />
+  <Color name=""JsonValue"" foreground=""#CE9178"" />
+  <Color name=""JsonNum"" foreground=""#B5CEA8"" />
+  <Color name=""JsonBool"" foreground=""#569CD6"" />
+  <Color name=""JsonPunct"" foreground=""#808080"" />
+  <Color name=""JsonComment"" foreground=""#6A9955"" />
   <RuleSet>
-    <Span color=""String"">
-      <Begin>""</Begin>
-      <End>""</End>
+    <Rule color=""Key"">&quot;[^&quot;]*(?:\\\\.[^&quot;]*)*&quot;(?=\s*:)</Rule>
+    <Span color=""JsonValue"">
+      <Begin>&quot;</Begin>
+      <End>&quot;</End>
       <RuleSet>
         <Span begin=""\\"" end=""."" />
       </RuleSet>
     </Span>
-    <Keywords color=""Keyword"">
+    <Keywords color=""JsonBool"">
       <Word>true</Word>
       <Word>false</Word>
       <Word>null</Word>
     </Keywords>
-    <Rule color=""Number"">-?\d+\.?\d*([eE][+-]?\d+)?</Rule>
-    <Rule color=""Comment"">//.*$</Rule>
+    <Rule color=""JsonNum"">\b-?\d+\.?\d*(?:[eE][+-]?\d+)?\b</Rule>
+    <Rule color=""JsonPunct"">[{}\[\]:,]</Rule>
+    <Rule color=""JsonComment"">//.*$</Rule>
   </RuleSet>
 </SyntaxDefinition>";
 
     private const string YamlXshd = @"<?xml version=""1.0""?>
 <SyntaxDefinition name=""YAML"" extensions="".yaml;.yml"">
+  <Color name=""YamlKey"" foreground=""#9CDCFE"" />
+  <Color name=""YamlString"" foreground=""#CE9178"" />
+  <Color name=""YamlNumber"" foreground=""#B5CEA8"" />
+  <Color name=""YamlKeyword"" foreground=""#569CD6"" />
+  <Color name=""YamlComment"" foreground=""#6A9955"" />
   <RuleSet>
-    <Span color=""Comment"" begin=""#"" end=""$"" />
-    <Span color=""String"">
+    <Span color=""YamlComment"" begin=""#"" end=""$"" />
+    <Span color=""YamlString"">
       <Begin>""</Begin>
       <End>""</End>
     </Span>
-    <Span color=""String"">
+    <Span color=""YamlString"">
       <Begin>'</Begin>
       <End>'</End>
     </Span>
-    <Rule color=""Keyword"">^[\w.-]+:</Rule>
-    <Rule color=""Number"">-?\d+\.?\d*</Rule>
-    <Keywords color=""Keyword"">
+    <Rule color=""YamlKey"">^[\w.-]+:</Rule>
+    <Rule color=""YamlNumber"">-?\d+\.?\d*</Rule>
+    <Keywords color=""YamlKeyword"">
       <Word>true</Word>
       <Word>false</Word>
       <Word>null</Word>

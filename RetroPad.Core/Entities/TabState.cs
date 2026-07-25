@@ -9,4 +9,5 @@ public class TabState
     public int CursorOffset { get; set; }
     public double ScrollOffset { get; set; }
     public bool IsActive { get; set; }
+    public bool IsModified { get; set; }
 }

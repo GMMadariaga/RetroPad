@@ -24,7 +24,8 @@ public class SessionService
             Language = doc.Language,
             CursorOffset = doc.CursorOffset,
             ScrollOffset = doc.ScrollOffset,
-            IsActive = index == activeTabIndex
+            IsActive = index == activeTabIndex,
+            IsModified = doc.IsModified
         }).ToList();
 
         var session = new SessionState
@@ -35,7 +36,8 @@ public class SessionService
 
         await _sessionStore.SaveAsync(session, ct);
 
-        foreach (var doc in documents.Where(d => string.IsNullOrEmpty(d.FilePath)))
+        // Save temp content for all modified documents (including file-based ones)
+        foreach (var doc in documents.Where(d => d.IsModified))
         {
             var tempPath = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),

@@ -122,19 +122,29 @@ public class MainViewModel : ViewModelBase
                             FileName = tab.FileName,
                             Language = tab.Language,
                             CursorOffset = tab.CursorOffset,
-                            ScrollOffset = tab.ScrollOffset
+                            ScrollOffset = tab.ScrollOffset,
+                            IsModified = tab.IsModified
                         };
 
                         if (!string.IsNullOrEmpty(tab.FilePath))
                         {
-                            try
+                            // For modified docs, prefer temp content (preserves unsaved changes)
+                            var temp = await _sessionService.LoadTempContentAsync(tab.DocumentId);
+                            if (temp is not null)
                             {
-                                doc.Content = await _documentService.OpenAsync(tab.FilePath);
+                                doc.Content = temp;
                             }
-                            catch
+                            else
                             {
-                                doc.Content = string.Empty;
-                                doc.FileName = $"[Not Found] {doc.FileName}";
+                                try
+                                {
+                                    doc.Content = await _documentService.OpenAsync(tab.FilePath);
+                                }
+                                catch
+                                {
+                                    doc.Content = string.Empty;
+                                    doc.FileName = $"[Not Found] {doc.FileName}";
+                                }
                             }
                         }
                         else
@@ -323,7 +333,7 @@ public class MainViewModel : ViewModelBase
         CursorStatus = $"Ln {line}, Col {column}";
     }
 
-    private void UpdateLanguageStatus()
+    public void UpdateLanguageStatus()
     {
         LanguageStatus = SelectedTab?.Document.Language ?? "PlainText";
     }

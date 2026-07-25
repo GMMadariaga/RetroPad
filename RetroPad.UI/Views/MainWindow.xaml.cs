@@ -6,6 +6,7 @@ using RetroPad.Infrastructure.Persistence;
 using RetroPad.Infrastructure.Syntax;
 using RetroPad.Infrastructure.Formatting;
 using RetroPad.Application.Services;
+using RetroPad.UI.Controls;
 using RetroPad.UI.Syntax;
 using RetroPad.UI.ViewModels;
 
@@ -15,7 +16,8 @@ public partial class MainWindow : Window
 {
     private MainViewModel _viewModel = null!;
     private AvalonEditSyntaxService _syntaxService = null!;
-    private readonly Dictionary<TabViewModel, ICSharpCode.AvalonEdit.TextEditor> _editors = new();
+    private readonly Dictionary<TabViewModel, RetroTextEditor> _editors = new();
+    private bool _isLoadingEditor;
 
     public MainWindow()
     {
@@ -60,7 +62,7 @@ public partial class MainWindow : Window
 
     private async void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
-        // Save cursor positions before closing
+        // Save cursor positions, but don't ask — session persists IsModified for next launch
         foreach (var (tab, editor) in _editors)
         {
             tab.Document.CursorOffset = editor.CaretOffset;
@@ -112,9 +114,11 @@ public partial class MainWindow : Window
         EditorHost.Child = editor;
     }
 
-    private ICSharpCode.AvalonEdit.TextEditor CreateEditor(TabViewModel tab)
+    private RetroTextEditor CreateEditor(TabViewModel tab)
     {
-        var editor = new ICSharpCode.AvalonEdit.TextEditor
+        _isLoadingEditor = true;
+
+        var editor = new RetroTextEditor
         {
             FontFamily = new System.Windows.Media.FontFamily("Cascadia Mono, Consolas, JetBrains Mono, Courier New"),
             FontSize = 14,
@@ -134,19 +138,37 @@ public partial class MainWindow : Window
         if (tab.Document.CursorOffset > 0 && tab.Document.CursorOffset <= editor.Document.TextLength)
             editor.CaretOffset = tab.Document.CursorOffset;
 
+        ApplyColorizer(editor, tab.Document.Language);
+
         editor.TextChanged += OnEditorTextChanged;
         editor.TextArea.Caret.PositionChanged += Editor_CaretPositionChanged;
+
+        // Auto-detect language on paste (for PlainText docs only)
+        editor.OnContentPasted = pastedContent =>
+        {
+            if (tab.Document.Language != "PlainText") return;
+            var detected = ContentLanguageDetector.Detect(pastedContent);
+            if (detected == "PlainText") return;
+
+            tab.Document.Language = detected;
+            editor.SyntaxHighlighting = _syntaxService.GetDefinition(detected);
+            ApplyColorizer(editor, detected);
+            _viewModel.UpdateLanguageStatus();
+            _viewModel.StatusText = $"Detected: {detected}";
+        };
 
         // Sync format command (ViewModel changes DisplayContent -> editor must update)
         tab.DisplayContentChanged += OnTabDisplayContentChanged;
 
+        _isLoadingEditor = false;
         return editor;
     }
 
     private void OnEditorTextChanged(object? sender, EventArgs e)
     {
+        if (_isLoadingEditor) return;
         if (sender is not ICSharpCode.AvalonEdit.TextEditor editor) return;
-        var tab = GetTabForEditor(editor);
+        var tab = GetTabForEditor(editor as RetroTextEditor);
         if (tab is not null)
         {
             tab.DisplayContentChanged -= OnTabDisplayContentChanged;
@@ -169,7 +191,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private TabViewModel? GetTabForEditor(ICSharpCode.AvalonEdit.TextEditor editor)
+    private TabViewModel? GetTabForEditor(RetroTextEditor? editor)
     {
         foreach (var (tab, ed) in _editors)
         {
@@ -184,7 +206,7 @@ public partial class MainWindow : Window
             _viewModel?.UpdateCursorStatus(caret.Line, caret.Column);
     }
 
-    private ICSharpCode.AvalonEdit.TextEditor? GetActiveEditor()
+    private RetroTextEditor? GetActiveEditor()
     {
         if (_viewModel?.SelectedTab is null) return null;
         _editors.TryGetValue(_viewModel.SelectedTab, out var editor);
@@ -197,7 +219,13 @@ public partial class MainWindow : Window
     private void Redo_Click(object sender, RoutedEventArgs e) => GetActiveEditor()?.Redo();
     private void Cut_Click(object sender, RoutedEventArgs e) => GetActiveEditor()?.Cut();
     private void Copy_Click(object sender, RoutedEventArgs e) => GetActiveEditor()?.Copy();
-    private void Paste_Click(object sender, RoutedEventArgs e) => GetActiveEditor()?.Paste();
+    private void Paste_Click(object sender, RoutedEventArgs e)
+    {
+        var editor = GetActiveEditor();
+        if (editor is null) return;
+        editor.PrepareForPaste();
+        editor.Paste();
+    }
     private void SelectAll_Click(object sender, RoutedEventArgs e) => GetActiveEditor()?.SelectAll();
 
     private void Find_Click(object sender, RoutedEventArgs e)
@@ -265,6 +293,8 @@ public partial class MainWindow : Window
     private void CloseTab_Click(object sender, MouseButtonEventArgs e)
     {
         if (sender is not FrameworkElement fe || fe.DataContext is not TabViewModel tab) return;
+        if (!AskToSaveIfNeeded(tab)) return; // user cancelled
+
         if (_editors.TryGetValue(tab, out var editor))
         {
             editor.TextArea.Caret.PositionChanged -= Editor_CaretPositionChanged;
@@ -273,6 +303,66 @@ public partial class MainWindow : Window
             _editors.Remove(tab);
         }
         _viewModel?.CloseTabCommand.Execute(tab);
+    }
+
+    private bool AskToSaveIfNeeded(TabViewModel tab)
+    {
+        if (!tab.Document.IsModified) return true;
+
+        var result = MessageBox.Show(
+            $"Save changes to \"{tab.Document.FileName}\"?",
+            "RetroPad",
+            MessageBoxButton.YesNoCancel,
+            MessageBoxImage.Question);
+
+        if (result == MessageBoxResult.Yes)
+        {
+            SaveFileForTab(tab);
+            return true;
+        }
+        return result == MessageBoxResult.No;
+    }
+
+    private void SaveFileForTab(TabViewModel tab)
+    {
+        if (tab.Document.HasFilePath)
+        {
+            try
+            {
+                var docRepo = new FileDocumentRepository();
+                docRepo.WriteAsync(tab.Document.FilePath, tab.DisplayContent).GetAwaiter().GetResult();
+                tab.Document.IsModified = false;
+                tab.RefreshHeader();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error saving: {ex.Message}", "RetroPad", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+        else
+        {
+            var dialog = new Microsoft.Win32.SaveFileDialog
+            {
+                Filter = "All Files (*.*)|*.*",
+                FileName = tab.Document.FileName
+            };
+            if (dialog.ShowDialog() == true)
+            {
+                try
+                {
+                    var docRepo = new FileDocumentRepository();
+                    docRepo.WriteAsync(dialog.FileName, tab.DisplayContent).GetAwaiter().GetResult();
+                    tab.Document.FilePath = dialog.FileName;
+                    tab.Document.FileName = System.IO.Path.GetFileName(dialog.FileName);
+                    tab.Document.IsModified = false;
+                    tab.RefreshHeader();
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Error saving: {ex.Message}", "RetroPad", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+        }
     }
 
     private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
@@ -305,6 +395,23 @@ public partial class MainWindow : Window
         _viewModel?.UpdateLanguage(lang);
 
         if (_viewModel?.SelectedTab is not null && _editors.TryGetValue(_viewModel.SelectedTab, out var editor))
+        {
             editor.SyntaxHighlighting = _syntaxService.GetDefinition(lang);
+            ApplyColorizer(editor, lang);
+        }
+    }
+
+    private static void ApplyColorizer(RetroTextEditor editor, string language)
+    {
+        var tv = editor.TextArea.TextView;
+        // Remove existing custom colorizers
+        for (int i = tv.LineTransformers.Count - 1; i >= 0; i--)
+        {
+            if (tv.LineTransformers[i] is JsonColorizer)
+                tv.LineTransformers.RemoveAt(i);
+        }
+        // Add colorizer for the language
+        if (language == "JSON")
+            tv.LineTransformers.Add(new JsonColorizer());
     }
 }

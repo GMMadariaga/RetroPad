@@ -11,7 +11,9 @@ public static class RetroEditorTheme
     private static readonly Color NumberColor = Color.FromRgb(0xB5, 0xCE, 0xA8);
     private static readonly Color KeywordColor = Color.FromRgb(0x56, 0x9C, 0xD6);
     private static readonly Color TypeColor = Color.FromRgb(0x4E, 0xC9, 0xB0);
-    private static readonly Color AttributeColor = Color.FromRgb(0xD7, 0xBA, 0x7D);
+    private static readonly Color AttributeColor = Color.FromRgb(0xD7, 0xBA, 0x7D); // gold (XML/HTML attrs, CSS props)
+    private static readonly Color KeyColor = Color.FromRgb(0x9C, 0xDC, 0xFE);       // light blue (JSON/YAML keys)
+    private static readonly Color PunctuationColor = Color.FromRgb(0x80, 0x80, 0x80); // gray (braces, brackets)
 
     public static void Apply()
     {
@@ -64,10 +66,14 @@ public static class RetroEditorTheme
             c = NumberColor;
         else if (lower.Contains("type") || lower.Contains("class"))
             c = TypeColor;
+        else if (lower.Contains("key") && !lower.Contains("keyword"))
+            c = KeyColor;
         else if (lower.Contains("attribute") || lower.Contains("property") || lower.Contains("selector"))
             c = AttributeColor;
         else if (lower.Contains("keyword") || lower.Contains("reserved"))
             c = KeywordColor;
+        else if (lower.Contains("punctuation") || lower.Contains("brace") || lower.Contains("bracket") || lower.Contains("separator"))
+            c = PunctuationColor;
         else
             return; // don't override default/unknown colors
 
